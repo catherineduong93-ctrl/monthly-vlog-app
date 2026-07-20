@@ -13,9 +13,10 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const updates: { caption?: string | null; include?: boolean } = {};
+  const updates: { caption?: string | null; include?: boolean; keepFull?: boolean } = {};
   if ("caption" in body) updates.caption = body.caption;
   if ("include" in body) updates.include = !!body.include;
+  if ("keepFull" in body) updates.keepFull = !!body.keepFull;
 
   const updated = updateMediaItem(config.defaultUserId, id, updates);
   if (!updated) {
@@ -26,5 +27,6 @@ export async function PATCH(
     id: updated.id,
     caption: updated.caption,
     include: !!updated.include,
+    keepFull: !!updated.keep_full,
   });
 }

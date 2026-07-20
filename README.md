@@ -14,25 +14,27 @@ in your configured Dropbox folder.
 the selected month, inline captions, include/exclude checkboxes, and
 drag-to-reorder, all persisted to the local SQLite `media_items` table.
 
-**Step 3:** "Generate Video" on the Review screen actually renders.
-Requires `ffmpeg`/`ffprobe` on your `PATH`. Clicking it downloads every
-included item from Dropbox, turns each photo into a slow Ken Burns
-pan/zoom clip and each video into a muted clip, burns in a bottom-bar
-caption where one is set, crossfades everything together, and writes an
-mp4 under `./data/renders/`. The screen polls for progress and shows a
-preview + download link when it's done.
+**Step 3:** Basic ffmpeg render — photos in order with burned-in
+captions, no music, no transitions. Requires `ffmpeg`/`ffprobe` on your
+`PATH`.
 
-**Step 4:** Optional background music. If `DROPBOX_MUSIC_FOLDER_PATH` is
-set, the Review screen shows a dropdown of tracks from that folder;
-picking one loops the track under the (muted) video with a 2s fade-out,
-trimmed to the video's exact length.
+**Step 4:** Added a single background music track and crossfade
+transitions between items.
 
-**Step 5 (this commit):** Better pacing and a proper opening/closing.
-Video clips are capped to 12s (trimmed from the start) so one long
-Insta360 clip can't dominate the whole edit; the video now opens on a
-title card with the month name and closes with a 1s fade-to-black instead
-of an abrupt cut; background music is loudness-normalized so tracks of
-different mastered volume all come out consistent.
+**Step 5 (this commit):** Video clip handling mixed in with photos —
+clips trim to `DEFAULT_VIDEO_CLIP_SECONDS` (4s) by default, or play at
+full length if you check "Keep full length" on that item in the Review
+screen.
+
+Clicking **Generate Video** downloads every included item from Dropbox,
+turns each photo into a `PHOTO_DURATION_SECONDS` (3s) static segment and
+each video into a muted clip (trimmed or full-length per the checkbox),
+burns in a bottom-bar caption where one is set, crossfades everything
+together, loops the configured music track under it if `MUSIC_TRACK_PATH`
+is set, and writes an mp4 under `./data/renders/`. You land on a separate
+**Output** screen (`/output?job=<id>`) that shows progress while it
+renders, then a preview + download link, with a link back to Review to
+tweak captions/order and regenerate.
 
 ## One-time setup: create a Dropbox app
 
@@ -71,8 +73,9 @@ Edit `.env.local`:
 - `DROPBOX_FOLDER_PATH` — the Dropbox path your Insta360 exports + photos
   land in (e.g. `/Camera Uploads/Vlog`). Leave blank to use the whole
   Dropbox / app folder root.
-- `DROPBOX_MUSIC_FOLDER_PATH` — optional; a Dropbox folder of audio tracks
-  to offer as background music. Leave blank to hide the music picker.
+- `MUSIC_TRACK_PATH` — optional; path to a single local royalty-free music
+  file (you supply it) to loop under the generated video. Leave blank for
+  no music.
 - `DATABASE_PATH` — leave as default; the SQLite file is created
   automatically under `./data/`.
 
@@ -100,14 +103,19 @@ you only need to re-connect if you revoke access in Dropbox.
 - Type a caption under any item — it saves when you click away from the
   field.
 - Uncheck "Include in video" to leave an item out of the render.
+- On a video item, check "Keep full length" to skip the default trim and
+  use the whole clip.
 - Drag a card onto another to reorder — the new order saves immediately.
-- If `DROPBOX_MUSIC_FOLDER_PATH` is set, pick a background music track
-  from the dropdown before generating (or leave it on "None").
-- "Generate Video" downloads the included items, renders, and shows a
-  preview + download link when done (see Steps 3-5 above).
+- "Generate Video" starts the render and takes you to the Output screen.
 
 Only image/video files with a recognized extension are shown (jpg, jpeg,
 png, heic, heif, tif, tiff, gif, webp, mp4, mov, m4v, avi, mkv, webm).
+
+## Output (`/output?job=<id>`)
+
+Shows render progress while the job is `queued`/`downloading`/`rendering`,
+then a video preview + download button once done, or the error message if
+it failed. "Tweak and regenerate" links back to Review.
 
 ## Data model
 
@@ -117,11 +125,11 @@ without a schema change).
 
 `media_items` — one row per Dropbox file the review screen has seen
 (`dropbox_file_id`, `user_id`, `month`, `caption`, `sort_order`,
-`include`, `created_at`). Captions/order/include are edited here; name,
-thumbnail, and timestamp are always read fresh from Dropbox so renames
-show up automatically.
+`include`, `keep_full`, `created_at`). Captions/order/include/keep_full
+are edited here; name, thumbnail, and timestamp are always read fresh
+from Dropbox so renames show up automatically.
 
 `render_jobs` — one row per "Generate Video" click (`user_id`, `month`,
-`status`, `progress`, `output_path`, `music_path`, `error`). The Review
+`status`, `progress`, `output_path`, `music_path`, `error`). The Output
 screen polls `GET /api/render/[id]` while a job is
 `queued`/`downloading`/`rendering`.

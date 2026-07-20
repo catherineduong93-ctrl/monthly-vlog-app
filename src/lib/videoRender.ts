@@ -8,16 +8,13 @@ import { getMediaItems } from "./mediaItems";
 import { updateRenderJob } from "./renderJobs";
 import {
   CROSSFADE_SECONDS,
+  DEFAULT_VIDEO_CLIP_SECONDS,
   FPS,
-  MAX_VIDEO_CLIP_SECONDS,
   MUSIC_FADE_SECONDS,
-  OUTRO_FADE_SECONDS,
   PHOTO_DURATION_SECONDS,
-  TITLE_CARD_SECONDS,
   VIDEO_HEIGHT,
   VIDEO_WIDTH,
   captionFilter,
-  escapeDrawtext,
   ffprobeDuration,
   runFfmpeg,
 } from "./ffmpeg";
@@ -28,6 +25,7 @@ interface RenderableItem {
   name: string;
   kind: "photo" | "video";
   caption: string | null;
+  keepFull: boolean;
 }
 
 function rendersDir(): string {
@@ -55,6 +53,7 @@ async function collectRenderableItems(
       name: entry.name,
       kind,
       caption: row.caption,
+      keepFull: !!row.keep_full,
     });
   }
   return items;
@@ -67,12 +66,10 @@ async function buildPhotoSegment(
   caption: string | null
 ): Promise<string> {
   const outputPath = path.join(workDir, `seg-${index}.mp4`);
-  const frames = PHOTO_DURATION_SECONDS * FPS;
   const vf =
-    `scale=${VIDEO_WIDTH * 2}:${VIDEO_HEIGHT * 2}:force_original_aspect_ratio=increase,` +
-    `crop=${VIDEO_WIDTH * 2}:${VIDEO_HEIGHT * 2},` +
-    `zoompan=z='min(zoom+0.0012,1.2)':d=${frames}:s=${VIDEO_WIDTH}x${VIDEO_HEIGHT}:fps=${FPS}:` +
-    `x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)',format=yuv420p${captionFilter(caption)}`;
+    `scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,` +
+    `pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,` +
+    `format=yuv420p${captionFilter(caption)}`;
 
   await runFfmpeg([
     "-loop",
@@ -81,6 +78,8 @@ async function buildPhotoSegment(
     sourcePath,
     "-t",
     String(PHOTO_DURATION_SECONDS),
+    "-r",
+    String(FPS),
     "-vf",
     vf,
     "-an",
@@ -97,7 +96,8 @@ async function buildVideoSegment(
   workDir: string,
   index: number,
   sourcePath: string,
-  caption: string | null
+  caption: string | null,
+  keepFull: boolean
 ): Promise<string> {
   const outputPath = path.join(workDir, `seg-${index}.mp4`);
   const vf =
@@ -105,11 +105,11 @@ async function buildVideoSegment(
     `pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,` +
     `fps=${FPS},format=yuv420p${captionFilter(caption)}`;
 
-  await runFfmpeg([
-    "-i",
-    sourcePath,
-    "-t",
-    String(MAX_VIDEO_CLIP_SECONDS),
+  const args = ["-i", sourcePath];
+  if (!keepFull) {
+    args.push("-t", String(DEFAULT_VIDEO_CLIP_SECONDS));
+  }
+  args.push(
     "-vf",
     vf,
     "-an",
@@ -117,41 +117,10 @@ async function buildVideoSegment(
     "libx264",
     "-pix_fmt",
     "yuv420p",
-    outputPath,
-  ]);
-  return outputPath;
-}
+    outputPath
+  );
 
-function formatMonthLabel(month: string): string {
-  const [year, monthNum] = month.split("-").map(Number);
-  const date = new Date(Date.UTC(year, monthNum - 1, 1));
-  return date.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
-}
-
-/**
- * A black frame with the month name, used as the opening segment so the
- * video has a proper title instead of starting mid-clip.
- */
-async function buildTitleCardSegment(workDir: string, month: string): Promise<string> {
-  const outputPath = path.join(workDir, "seg-title.mp4");
-  const label = escapeDrawtext(formatMonthLabel(month));
-  const vf =
-    `drawtext=text='${label}':expansion=none:fontcolor=white:fontsize=90:` +
-    `x=(w-text_w)/2:y=(h-text_h)/2,format=yuv420p`;
-
-  await runFfmpeg([
-    "-f",
-    "lavfi",
-    "-i",
-    `color=c=black:s=${VIDEO_WIDTH}x${VIDEO_HEIGHT}:r=${FPS}:d=${TITLE_CARD_SECONDS}`,
-    "-vf",
-    vf,
-    "-c:v",
-    "libx264",
-    "-pix_fmt",
-    "yuv420p",
-    outputPath,
-  ]);
+  await runFfmpeg(args);
   return outputPath;
 }
 
@@ -165,13 +134,9 @@ async function concatWithCrossfade(
   outputPath: string
 ): Promise<void> {
   if (segmentPaths.length === 1) {
-    const duration = await ffprobeDuration(segmentPaths[0]);
-    const fadeStart = Math.max(duration - OUTRO_FADE_SECONDS, 0);
     await runFfmpeg([
       "-i",
       segmentPaths[0],
-      "-vf",
-      `fade=t=out:st=${fadeStart.toFixed(3)}:d=${OUTRO_FADE_SECONDS}`,
       "-c:v",
       "libx264",
       "-pix_fmt",
@@ -190,18 +155,13 @@ async function concatWithCrossfade(
 
   for (let i = 1; i < segmentPaths.length; i++) {
     const offset = Math.max(cumulative - CROSSFADE_SECONDS, 0);
-    const outLabel = i === segmentPaths.length - 1 ? "vpre" : `v${i}`;
+    const outLabel = i === segmentPaths.length - 1 ? "vout" : `v${i}`;
     filters.push(
       `[${lastLabel}][${i}:v]xfade=transition=fade:duration=${CROSSFADE_SECONDS}:offset=${offset.toFixed(3)}[${outLabel}]`
     );
     cumulative = offset + durations[i];
     lastLabel = outLabel;
   }
-
-  const fadeStart = Math.max(cumulative - OUTRO_FADE_SECONDS, 0);
-  filters.push(
-    `[${lastLabel}]fade=t=out:st=${fadeStart.toFixed(3)}:d=${OUTRO_FADE_SECONDS}[vout]`
-  );
 
   await runFfmpeg([
     ...inputArgs,
@@ -218,9 +178,9 @@ async function concatWithCrossfade(
 }
 
 /**
- * Loops the music track under the (already muted) video, fading it out
- * over the last MUSIC_FADE_SECONDS and trimming it to the video's exact
- * length via -shortest. The video stream is copied, not re-encoded.
+ * Loops the music track under the (muted) video, fading it out over the
+ * last MUSIC_FADE_SECONDS and trimming it to the video's exact length via
+ * -shortest. The video stream is copied, not re-encoded.
  */
 async function muxBackgroundMusic(
   videoPath: string,
@@ -238,8 +198,7 @@ async function muxBackgroundMusic(
     "-i",
     musicPath,
     "-filter_complex",
-    `[1:a]loudnorm=I=-16:TP=-1.5:LRA=11[norm];` +
-      `[norm]afade=t=out:st=${fadeStart.toFixed(3)}:d=${MUSIC_FADE_SECONDS}[aout]`,
+    `[1:a]afade=t=out:st=${fadeStart.toFixed(3)}:d=${MUSIC_FADE_SECONDS}[aout]`,
     "-map",
     "0:v",
     "-map",
@@ -258,18 +217,14 @@ async function muxBackgroundMusic(
 /**
  * Runs the full render for a month in the background: downloads every
  * included media item from Dropbox, turns each into a normalized segment
- * (Ken Burns pan/zoom for photos, muted full-length clip for videos, both
- * with a burned-in bottom-bar caption), crossfades them together, optionally
- * loops a Dropbox-hosted music track under the result with a fade-out, and
- * writes the final mp4 under <dataDir>/renders. Updates the render_jobs row
- * as it progresses so the UI can poll for status.
+ * (photos held for PHOTO_DURATION_SECONDS, video clips trimmed to
+ * DEFAULT_VIDEO_CLIP_SECONDS unless flagged "keep full length"), both with
+ * a burned-in bottom-bar caption, crossfades them together, optionally
+ * loops the configured local music track under the result, and writes the
+ * final mp4 under <dataDir>/renders. Updates the render_jobs row as it
+ * progresses so the UI can poll for status.
  */
-export async function runRenderJob(
-  jobId: number,
-  userId: number,
-  month: string,
-  musicPath: string | null
-) {
+export async function runRenderJob(jobId: number, userId: number, month: string) {
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), "vlog-render-"));
 
   try {
@@ -284,9 +239,7 @@ export async function runRenderJob(
       return;
     }
 
-    updateRenderJob(jobId, { status: "rendering", progress: "Building title card…" });
-    const segmentPaths: string[] = [await buildTitleCardSegment(workDir, month)];
-
+    const segmentPaths: string[] = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       updateRenderJob(jobId, {
@@ -306,7 +259,7 @@ export async function runRenderJob(
       const segmentPath =
         item.kind === "photo"
           ? await buildPhotoSegment(workDir, i, sourcePath, item.caption)
-          : await buildVideoSegment(workDir, i, sourcePath, item.caption);
+          : await buildVideoSegment(workDir, i, sourcePath, item.caption, item.keepFull);
       segmentPaths.push(segmentPath);
 
       // Free disk space as we go; the source file isn't needed once its
@@ -322,17 +275,13 @@ export async function runRenderJob(
     await fs.mkdir(rendersDir(), { recursive: true });
     const outputPath = path.join(rendersDir(), `${userId}-${month}-${jobId}.mp4`);
 
+    const musicPath = config.music.trackPath();
     if (musicPath) {
       const silentPath = path.join(workDir, "silent.mp4");
       await concatWithCrossfade(segmentPaths, silentPath);
 
       updateRenderJob(jobId, { status: "rendering", progress: "Adding music…" });
-      const musicExt = path.extname(musicPath) || ".mp3";
-      const musicSourcePath = path.join(workDir, `music${musicExt}`);
-      const musicData = await downloadFile(userId, musicPath);
-      await fs.writeFile(musicSourcePath, musicData);
-
-      await muxBackgroundMusic(silentPath, musicSourcePath, outputPath);
+      await muxBackgroundMusic(silentPath, musicPath, outputPath);
     } else {
       await concatWithCrossfade(segmentPaths, outputPath);
     }
@@ -341,6 +290,7 @@ export async function runRenderJob(
       status: "done",
       progress: "Done.",
       output_path: outputPath,
+      music_path: musicPath,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

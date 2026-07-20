@@ -8,6 +8,7 @@ export interface MediaItemRow {
   caption: string | null;
   sort_order: number;
   include: number;
+  keep_full: number;
   created_at: string;
 }
 
@@ -72,7 +73,7 @@ export function getMediaItems(userId: number, month: string): MediaItemRow[] {
 export function updateMediaItem(
   userId: number,
   id: number,
-  updates: { caption?: string | null; include?: boolean }
+  updates: { caption?: string | null; include?: boolean; keepFull?: boolean }
 ): MediaItemRow | undefined {
   const sets: string[] = [];
   const params: Record<string, unknown> = { userId, id };
@@ -84,6 +85,10 @@ export function updateMediaItem(
   if ("include" in updates) {
     sets.push("include = @include");
     params.include = updates.include ? 1 : 0;
+  }
+  if ("keepFull" in updates) {
+    sets.push("keep_full = @keepFull");
+    params.keepFull = updates.keepFull ? 1 : 0;
   }
   if (sets.length === 0) {
     return db

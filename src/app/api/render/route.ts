@@ -45,11 +45,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const musicPath =
-    typeof body.musicPath === "string" && body.musicPath.trim() !== ""
-      ? body.musicPath
-      : null;
-
   const userId = config.defaultUserId;
 
   const existing = getLatestRenderJob(userId, month);
@@ -57,9 +52,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ job: serialize(existing) });
   }
 
-  const job = createRenderJob(userId, month, musicPath);
+  const job = createRenderJob(userId, month);
   // Fire and forget: the client polls GET /api/render?month= for progress.
-  runRenderJob(job.id, userId, month, musicPath).catch(() => {
+  runRenderJob(job.id, userId, month).catch(() => {
     // runRenderJob already records failures on the job row itself.
   });
 

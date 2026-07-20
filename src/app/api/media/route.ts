@@ -56,6 +56,7 @@ export async function GET(request: NextRequest) {
           caption: row.caption,
           sortOrder: row.sort_order,
           include: !!row.include,
+          keepFull: !!row.keep_full,
         };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null);

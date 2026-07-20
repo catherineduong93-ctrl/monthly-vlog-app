@@ -15,16 +15,10 @@ export interface RenderJobRow {
   updated_at: string;
 }
 
-export function createRenderJob(
-  userId: number,
-  month: string,
-  musicPath: string | null
-): RenderJobRow {
+export function createRenderJob(userId: number, month: string): RenderJobRow {
   const { lastInsertRowid } = db
-    .prepare(
-      `INSERT INTO render_jobs (user_id, month, status, music_path) VALUES (?, ?, 'queued', ?)`
-    )
-    .run(userId, month, musicPath);
+    .prepare(`INSERT INTO render_jobs (user_id, month, status) VALUES (?, ?, 'queued')`)
+    .run(userId, month);
   return getRenderJob(Number(lastInsertRowid))!;
 }
 
@@ -52,13 +46,13 @@ export function isRenderJobActive(job: RenderJobRow): boolean {
 export function updateRenderJob(
   id: number,
   updates: Partial<
-    Pick<RenderJobRow, "status" | "progress" | "output_path" | "error">
+    Pick<RenderJobRow, "status" | "progress" | "output_path" | "music_path" | "error">
   >
 ) {
   const sets: string[] = ["updated_at = datetime('now')"];
   const params: Record<string, unknown> = { id };
 
-  for (const key of ["status", "progress", "output_path", "error"] as const) {
+  for (const key of ["status", "progress", "output_path", "music_path", "error"] as const) {
     if (key in updates) {
       sets.push(`${key} = @${key}`);
       params[key] = updates[key] ?? null;

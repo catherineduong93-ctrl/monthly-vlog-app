@@ -33,6 +33,7 @@ function createDb(): Database.Database {
       caption TEXT,
       sort_order INTEGER NOT NULL,
       include INTEGER NOT NULL DEFAULT 1,
+      keep_full INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE (user_id, dropbox_file_id)
     );

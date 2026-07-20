@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface MediaItem {
   id: number;
@@ -12,6 +13,7 @@ interface MediaItem {
   caption: string | null;
   sortOrder: number;
   include: boolean;
+  keepFull: boolean;
 }
 
 type RenderStatus = "queued" | "downloading" | "rendering" | "done" | "error";
@@ -20,18 +22,7 @@ interface RenderJob {
   id: number;
   month: string;
   status: RenderStatus;
-  progress: string | null;
-  error: string | null;
-  outputPath: string | null;
-  musicPath: string | null;
 }
-
-interface MusicTrack {
-  path: string;
-  name: string;
-}
-
-const ACTIVE_RENDER_STATUSES: RenderStatus[] = ["queued", "downloading", "rendering"];
 
 function currentMonth(): string {
   const now = new Date();
@@ -39,15 +30,15 @@ function currentMonth(): string {
 }
 
 export default function ReviewPage() {
+  const router = useRouter();
   const [month, setMonth] = useState(currentMonth());
   const [items, setItems] = useState<MediaItem[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<number | null>(null);
-  const [renderJob, setRenderJob] = useState<RenderJob | null>(null);
+  const [lastRenderJob, setLastRenderJob] = useState<RenderJob | null>(null);
+  const [starting, setStarting] = useState(false);
   const [renderError, setRenderError] = useState<string | null>(null);
-  const [musicTracks, setMusicTracks] = useState<MusicTrack[]>([]);
-  const [selectedMusicPath, setSelectedMusicPath] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -83,12 +74,9 @@ export default function ReviewPage() {
       try {
         const res = await fetch(`/api/render?month=${month}`);
         const data = await res.json();
-        if (!cancelled && res.ok) {
-          setRenderJob(data.job);
-          setRenderError(null);
-        }
+        if (!cancelled && res.ok) setLastRenderJob(data.job);
       } catch {
-        // No existing job for this month yet; leave renderJob as-is.
+        // No existing job for this month yet; leave lastRenderJob as-is.
       }
     }
 
@@ -98,61 +86,21 @@ export default function ReviewPage() {
     };
   }, [month]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadTracks() {
-      try {
-        const res = await fetch("/api/music");
-        const data = await res.json();
-        if (!cancelled && res.ok) setMusicTracks(data.tracks);
-      } catch {
-        // Music folder not configured or unreachable; picker stays empty.
-      }
-    }
-
-    loadTracks();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const activeJobId =
-    renderJob && ACTIVE_RENDER_STATUSES.includes(renderJob.status) ? renderJob.id : null;
-
-  useEffect(() => {
-    if (activeJobId === null) return;
-
-    let cancelled = false;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/render/${activeJobId}`);
-        const data = await res.json();
-        if (!cancelled && res.ok) setRenderJob(data.job);
-      } catch {
-        // Transient fetch error; the next poll tick will retry.
-      }
-    }, 2000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [activeJobId]);
-
   async function startRender() {
     setRenderError(null);
+    setStarting(true);
     try {
       const res = await fetch("/api/render", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ month, musicPath: selectedMusicPath || null }),
+        body: JSON.stringify({ month }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to start render.");
-      setRenderJob(data.job);
+      router.push(`/output?job=${data.job.id}`);
     } catch (e) {
       setRenderError(e instanceof Error ? e.message : "Failed to start render.");
+      setStarting(false);
     }
   }
 
@@ -179,6 +127,19 @@ export default function ReviewPage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ include }),
+    });
+  }
+
+  async function toggleKeepFull(id: number, keepFull: boolean) {
+    setItems((prev) =>
+      prev
+        ? prev.map((item) => (item.id === id ? { ...item, keepFull } : item))
+        : prev
+    );
+    await fetch(`/api/media/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keepFull }),
     });
   }
 
@@ -290,74 +251,41 @@ export default function ReviewPage() {
                   />
                   Include in video
                 </label>
+
+                {item.kind === "video" && (
+                  <label className="flex items-center gap-2 text-xs opacity-80">
+                    <input
+                      type="checkbox"
+                      checked={item.keepFull}
+                      onChange={(e) => toggleKeepFull(item.id, e.target.checked)}
+                    />
+                    Keep full length
+                  </label>
+                )}
               </div>
             ))}
           </div>
 
           <div className="flex flex-col gap-2 pt-2">
-            {musicTracks.length > 0 && (
-              <label className="flex items-center gap-2 text-sm w-fit">
-                Background music
-                <select
-                  value={selectedMusicPath}
-                  onChange={(e) => setSelectedMusicPath(e.target.value)}
-                  disabled={activeJobId !== null}
-                  className="rounded-md border border-black/15 dark:border-white/20 px-2 py-1 bg-transparent"
-                >
-                  <option value="">None</option>
-                  {musicTracks.map((track) => (
-                    <option key={track.path} value={track.path}>
-                      {track.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
             <button
               onClick={startRender}
-              disabled={activeJobId !== null || includedCount === 0}
+              disabled={starting || includedCount === 0}
               className="w-fit rounded-md bg-blue-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {activeJobId !== null ? "Generating…" : "Generate Video"}
+              {starting ? "Starting…" : "Generate Video"}
             </button>
 
             {renderError && (
               <p className="text-sm text-red-600 dark:text-red-400">{renderError}</p>
             )}
 
-            {renderJob && ACTIVE_RENDER_STATUSES.includes(renderJob.status) && (
-              <p className="text-xs opacity-70">
-                {renderJob.progress ?? "Working…"}
-              </p>
-            )}
-
-            {renderJob?.status === "error" && (
-              <p className="text-sm text-red-600 dark:text-red-400">
-                {renderJob.error ?? "Render failed."}
-              </p>
-            )}
-
-            {renderJob?.status === "done" && (
-              <div className="flex flex-col gap-2 pt-1">
-                <video
-                  controls
-                  className="w-full max-w-md rounded-md border border-black/10 dark:border-white/15"
-                  src={`/api/render/${renderJob.id}/file`}
-                />
-                {renderJob.musicPath && (
-                  <p className="text-xs opacity-60">
-                    Music: {musicTracks.find((t) => t.path === renderJob.musicPath)?.name ?? renderJob.musicPath}
-                  </p>
-                )}
-                <a
-                  href={`/api/render/${renderJob.id}/file`}
-                  download={`monthly-vlog-${renderJob.month}.mp4`}
-                  className="text-sm text-blue-600 dark:text-blue-400 underline w-fit"
-                >
-                  Download video
-                </a>
-              </div>
+            {lastRenderJob && (
+              <a
+                href={`/output?job=${lastRenderJob.id}`}
+                className="text-sm text-blue-600 dark:text-blue-400 underline w-fit"
+              >
+                View last render for this month
+              </a>
             )}
           </div>
         </>
