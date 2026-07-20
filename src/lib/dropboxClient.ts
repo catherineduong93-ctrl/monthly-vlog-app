@@ -149,6 +149,14 @@ export async function getThumbnail(
     size: { ".tag": "w480h320" },
   });
 
-  const result = response.result as unknown as { fileBinary: Buffer };
-  return { data: result.fileBinary, contentType: "image/jpeg" };
+  // The SDK picks Buffer (fileBinary) vs. Blob (fileBlob) based on a browser
+  // detection heuristic that misfires under Next.js's ESM server bundle, so
+  // handle whichever one it actually decided to hand back.
+  const result = response.result as unknown as {
+    fileBinary?: Buffer;
+    fileBlob?: Blob;
+  };
+  const data = result.fileBinary ?? Buffer.from(await result.fileBlob!.arrayBuffer());
+
+  return { data, contentType: "image/jpeg" };
 }
