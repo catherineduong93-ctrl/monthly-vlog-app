@@ -9,6 +9,7 @@ import { updateRenderJob } from "./renderJobs";
 import {
   CROSSFADE_SECONDS,
   FPS,
+  MUSIC_FADE_SECONDS,
   PHOTO_DURATION_SECONDS,
   VIDEO_HEIGHT,
   VIDEO_WIDTH,
@@ -169,14 +170,57 @@ async function concatWithCrossfade(
 }
 
 /**
+ * Loops the music track under the (already muted) video, fading it out
+ * over the last MUSIC_FADE_SECONDS and trimming it to the video's exact
+ * length via -shortest. The video stream is copied, not re-encoded.
+ */
+async function muxBackgroundMusic(
+  videoPath: string,
+  musicPath: string,
+  outputPath: string
+): Promise<void> {
+  const duration = await ffprobeDuration(videoPath);
+  const fadeStart = Math.max(duration - MUSIC_FADE_SECONDS, 0);
+
+  await runFfmpeg([
+    "-i",
+    videoPath,
+    "-stream_loop",
+    "-1",
+    "-i",
+    musicPath,
+    "-filter_complex",
+    `[1:a]afade=t=out:st=${fadeStart.toFixed(3)}:d=${MUSIC_FADE_SECONDS}[aout]`,
+    "-map",
+    "0:v",
+    "-map",
+    "[aout]",
+    "-c:v",
+    "copy",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "192k",
+    "-shortest",
+    outputPath,
+  ]);
+}
+
+/**
  * Runs the full render for a month in the background: downloads every
  * included media item from Dropbox, turns each into a normalized segment
  * (Ken Burns pan/zoom for photos, muted full-length clip for videos, both
- * with a burned-in bottom-bar caption), crossfades them together, and
+ * with a burned-in bottom-bar caption), crossfades them together, optionally
+ * loops a Dropbox-hosted music track under the result with a fade-out, and
  * writes the final mp4 under <dataDir>/renders. Updates the render_jobs row
  * as it progresses so the UI can poll for status.
  */
-export async function runRenderJob(jobId: number, userId: number, month: string) {
+export async function runRenderJob(
+  jobId: number,
+  userId: number,
+  month: string,
+  musicPath: string | null
+) {
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), "vlog-render-"));
 
   try {
@@ -226,7 +270,21 @@ export async function runRenderJob(jobId: number, userId: number, month: string)
 
     await fs.mkdir(rendersDir(), { recursive: true });
     const outputPath = path.join(rendersDir(), `${userId}-${month}-${jobId}.mp4`);
-    await concatWithCrossfade(segmentPaths, outputPath);
+
+    if (musicPath) {
+      const silentPath = path.join(workDir, "silent.mp4");
+      await concatWithCrossfade(segmentPaths, silentPath);
+
+      updateRenderJob(jobId, { status: "rendering", progress: "Adding music…" });
+      const musicExt = path.extname(musicPath) || ".mp3";
+      const musicSourcePath = path.join(workDir, `music${musicExt}`);
+      const musicData = await downloadFile(userId, musicPath);
+      await fs.writeFile(musicSourcePath, musicData);
+
+      await muxBackgroundMusic(silentPath, musicSourcePath, outputPath);
+    } else {
+      await concatWithCrossfade(segmentPaths, outputPath);
+    }
 
     updateRenderJob(jobId, {
       status: "done",

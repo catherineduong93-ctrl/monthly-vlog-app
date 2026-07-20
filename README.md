@@ -14,14 +14,19 @@ in your configured Dropbox folder.
 the selected month, inline captions, include/exclude checkboxes, and
 drag-to-reorder, all persisted to the local SQLite `media_items` table.
 
-**Step 3 (this commit):** "Generate Video" on the Review screen actually
-renders. Requires `ffmpeg`/`ffprobe` on your `PATH`. Clicking it downloads
-every included item from Dropbox, turns each photo into a slow Ken Burns
+**Step 3:** "Generate Video" on the Review screen actually renders.
+Requires `ffmpeg`/`ffprobe` on your `PATH`. Clicking it downloads every
+included item from Dropbox, turns each photo into a slow Ken Burns
 pan/zoom clip and each video into a muted full-length clip, burns in a
 bottom-bar caption where one is set, crossfades everything together, and
 writes an mp4 under `./data/renders/`. The screen polls for progress and
-shows a preview + download link when it's done. No background music or
-trimming yet — that's a later step if wanted.
+shows a preview + download link when it's done.
+
+**Step 4 (this commit):** Optional background music. If
+`DROPBOX_MUSIC_FOLDER_PATH` is set, the Review screen shows a dropdown of
+tracks from that folder; picking one loops the track under the (muted)
+video with a 2s fade-out, trimmed to the video's exact length. No
+trimming of over-long clips yet — that's a later step if wanted.
 
 ## One-time setup: create a Dropbox app
 
@@ -60,6 +65,8 @@ Edit `.env.local`:
 - `DROPBOX_FOLDER_PATH` — the Dropbox path your Insta360 exports + photos
   land in (e.g. `/Camera Uploads/Vlog`). Leave blank to use the whole
   Dropbox / app folder root.
+- `DROPBOX_MUSIC_FOLDER_PATH` — optional; a Dropbox folder of audio tracks
+  to offer as background music. Leave blank to hide the music picker.
 - `DATABASE_PATH` — leave as default; the SQLite file is created
   automatically under `./data/`.
 
@@ -88,8 +95,10 @@ you only need to re-connect if you revoke access in Dropbox.
   field.
 - Uncheck "Include in video" to leave an item out of the render.
 - Drag a card onto another to reorder — the new order saves immediately.
+- If `DROPBOX_MUSIC_FOLDER_PATH` is set, pick a background music track
+  from the dropdown before generating (or leave it on "None").
 - "Generate Video" downloads the included items, renders, and shows a
-  preview + download link when done (see Step 3 above).
+  preview + download link when done (see Step 3/4 above).
 
 Only image/video files with a recognized extension are shown (jpg, jpeg,
 png, heic, heif, tif, tiff, gif, webp, mp4, mov, m4v, avi, mkv, webm).
@@ -107,5 +116,6 @@ thumbnail, and timestamp are always read fresh from Dropbox so renames
 show up automatically.
 
 `render_jobs` — one row per "Generate Video" click (`user_id`, `month`,
-`status`, `progress`, `output_path`, `error`). The Review screen polls
-`GET /api/render/[id]` while a job is `queued`/`downloading`/`rendering`.
+`status`, `progress`, `output_path`, `music_path`, `error`). The Review
+screen polls `GET /api/render/[id]` while a job is
+`queued`/`downloading`/`rendering`.

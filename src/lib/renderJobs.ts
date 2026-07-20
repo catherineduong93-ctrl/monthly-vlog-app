@@ -9,17 +9,22 @@ export interface RenderJobRow {
   status: RenderStatus;
   progress: string | null;
   output_path: string | null;
+  music_path: string | null;
   error: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export function createRenderJob(userId: number, month: string): RenderJobRow {
+export function createRenderJob(
+  userId: number,
+  month: string,
+  musicPath: string | null
+): RenderJobRow {
   const { lastInsertRowid } = db
     .prepare(
-      `INSERT INTO render_jobs (user_id, month, status) VALUES (?, ?, 'queued')`
+      `INSERT INTO render_jobs (user_id, month, status, music_path) VALUES (?, ?, 'queued', ?)`
     )
-    .run(userId, month);
+    .run(userId, month, musicPath);
   return getRenderJob(Number(lastInsertRowid))!;
 }
 

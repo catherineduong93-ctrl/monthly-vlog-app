@@ -47,6 +47,7 @@ function createDb(): Database.Database {
       status TEXT NOT NULL DEFAULT 'queued',
       progress TEXT,
       output_path TEXT,
+      music_path TEXT,
       error TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))

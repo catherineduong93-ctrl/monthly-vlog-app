@@ -101,8 +101,25 @@ export interface DropboxFileEntry {
 export async function listConfiguredFolder(
   userId: number
 ): Promise<DropboxFileEntry[]> {
+  return listFolder(userId, config.dropbox.folderPath());
+}
+
+/**
+ * Lists every file directly inside the configured Dropbox music folder, for
+ * the background-music picker. Returns an empty list if no music folder is
+ * configured.
+ */
+export async function listMusicFolder(userId: number): Promise<DropboxFileEntry[]> {
+  const musicFolderPath = config.dropbox.musicFolderPath();
+  if (musicFolderPath === null) return [];
+  return listFolder(userId, musicFolderPath);
+}
+
+async function listFolder(
+  userId: number,
+  folderPath: string
+): Promise<DropboxFileEntry[]> {
   const dbx = await getClientForUser(userId);
-  const folderPath = config.dropbox.folderPath();
 
   type Entry =
     | files.FileMetadataReference

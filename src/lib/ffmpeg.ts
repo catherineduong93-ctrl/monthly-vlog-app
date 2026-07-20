@@ -5,6 +5,7 @@ export const VIDEO_HEIGHT = 1080;
 export const FPS = 30;
 export const PHOTO_DURATION_SECONDS = 4;
 export const CROSSFADE_SECONDS = 0.6;
+export const MUSIC_FADE_SECONDS = 2;
 
 /**
  * Runs ffmpeg (or ffprobe) and rejects with stderr on a non-zero exit, since

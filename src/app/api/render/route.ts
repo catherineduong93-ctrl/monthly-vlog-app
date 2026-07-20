@@ -17,6 +17,7 @@ function serialize(job: NonNullable<ReturnType<typeof getLatestRenderJob>>) {
     progress: job.progress,
     error: job.error,
     outputPath: job.output_path,
+    musicPath: job.music_path,
   };
 }
 
@@ -44,6 +45,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const musicPath =
+    typeof body.musicPath === "string" && body.musicPath.trim() !== ""
+      ? body.musicPath
+      : null;
+
   const userId = config.defaultUserId;
 
   const existing = getLatestRenderJob(userId, month);
@@ -51,9 +57,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ job: serialize(existing) });
   }
 
-  const job = createRenderJob(userId, month);
+  const job = createRenderJob(userId, month, musicPath);
   // Fire and forget: the client polls GET /api/render?month= for progress.
-  runRenderJob(job.id, userId, month).catch(() => {
+  runRenderJob(job.id, userId, month, musicPath).catch(() => {
     // runRenderJob already records failures on the job row itself.
   });
 

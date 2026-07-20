@@ -21,6 +21,15 @@ export const config = {
       if (raw === "" || raw === "/") return "";
       return raw.replace(/\/+$/, "");
     },
+    // Optional: a separate Dropbox folder to pick background music tracks
+    // from. Unset/blank disables the music picker entirely (returns null,
+    // unlike folderPath where blank means "the whole Dropbox root").
+    musicFolderPath: (): string | null => {
+      const raw = process.env.DROPBOX_MUSIC_FOLDER_PATH ?? "";
+      if (raw === "") return null;
+      if (raw === "/") return "";
+      return raw.replace(/\/+$/, "");
+    },
   },
   db: {
     path: () => process.env.DATABASE_PATH ?? "./data/app.db",

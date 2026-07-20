@@ -24,6 +24,7 @@ export async function GET(
       progress: job.progress,
       error: job.error,
       outputPath: job.output_path,
+      musicPath: job.music_path,
     },
   });
 }

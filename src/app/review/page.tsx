@@ -23,6 +23,12 @@ interface RenderJob {
   progress: string | null;
   error: string | null;
   outputPath: string | null;
+  musicPath: string | null;
+}
+
+interface MusicTrack {
+  path: string;
+  name: string;
 }
 
 const ACTIVE_RENDER_STATUSES: RenderStatus[] = ["queued", "downloading", "rendering"];
@@ -40,6 +46,8 @@ export default function ReviewPage() {
   const [draggedId, setDraggedId] = useState<number | null>(null);
   const [renderJob, setRenderJob] = useState<RenderJob | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
+  const [musicTracks, setMusicTracks] = useState<MusicTrack[]>([]);
+  const [selectedMusicPath, setSelectedMusicPath] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +98,25 @@ export default function ReviewPage() {
     };
   }, [month]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTracks() {
+      try {
+        const res = await fetch("/api/music");
+        const data = await res.json();
+        if (!cancelled && res.ok) setMusicTracks(data.tracks);
+      } catch {
+        // Music folder not configured or unreachable; picker stays empty.
+      }
+    }
+
+    loadTracks();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const activeJobId =
     renderJob && ACTIVE_RENDER_STATUSES.includes(renderJob.status) ? renderJob.id : null;
 
@@ -119,7 +146,7 @@ export default function ReviewPage() {
       const res = await fetch("/api/render", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ month }),
+        body: JSON.stringify({ month, musicPath: selectedMusicPath || null }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to start render.");
@@ -268,6 +295,25 @@ export default function ReviewPage() {
           </div>
 
           <div className="flex flex-col gap-2 pt-2">
+            {musicTracks.length > 0 && (
+              <label className="flex items-center gap-2 text-sm w-fit">
+                Background music
+                <select
+                  value={selectedMusicPath}
+                  onChange={(e) => setSelectedMusicPath(e.target.value)}
+                  disabled={activeJobId !== null}
+                  className="rounded-md border border-black/15 dark:border-white/20 px-2 py-1 bg-transparent"
+                >
+                  <option value="">None</option>
+                  {musicTracks.map((track) => (
+                    <option key={track.path} value={track.path}>
+                      {track.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
             <button
               onClick={startRender}
               disabled={activeJobId !== null || includedCount === 0}
@@ -299,6 +345,11 @@ export default function ReviewPage() {
                   className="w-full max-w-md rounded-md border border-black/10 dark:border-white/15"
                   src={`/api/render/${renderJob.id}/file`}
                 />
+                {renderJob.musicPath && (
+                  <p className="text-xs opacity-60">
+                    Music: {musicTracks.find((t) => t.path === renderJob.musicPath)?.name ?? renderJob.musicPath}
+                  </p>
+                )}
                 <a
                   href={`/api/render/${renderJob.id}/file`}
                   download={`monthly-vlog-${renderJob.month}.mp4`}
