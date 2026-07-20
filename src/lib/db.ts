@@ -39,6 +39,21 @@ function createDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_media_items_user_month
       ON media_items (user_id, month);
+
+    CREATE TABLE IF NOT EXISTS render_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      month TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      progress TEXT,
+      output_path TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_render_jobs_user_month
+      ON render_jobs (user_id, month);
   `);
 
   return db;

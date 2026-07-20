@@ -14,6 +14,19 @@ interface MediaItem {
   include: boolean;
 }
 
+type RenderStatus = "queued" | "downloading" | "rendering" | "done" | "error";
+
+interface RenderJob {
+  id: number;
+  month: string;
+  status: RenderStatus;
+  progress: string | null;
+  error: string | null;
+  outputPath: string | null;
+}
+
+const ACTIVE_RENDER_STATUSES: RenderStatus[] = ["queued", "downloading", "rendering"];
+
 function currentMonth(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -25,6 +38,8 @@ export default function ReviewPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<number | null>(null);
+  const [renderJob, setRenderJob] = useState<RenderJob | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +67,67 @@ export default function ReviewPage() {
       cancelled = true;
     };
   }, [month]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLatest() {
+      try {
+        const res = await fetch(`/api/render?month=${month}`);
+        const data = await res.json();
+        if (!cancelled && res.ok) {
+          setRenderJob(data.job);
+          setRenderError(null);
+        }
+      } catch {
+        // No existing job for this month yet; leave renderJob as-is.
+      }
+    }
+
+    loadLatest();
+    return () => {
+      cancelled = true;
+    };
+  }, [month]);
+
+  const activeJobId =
+    renderJob && ACTIVE_RENDER_STATUSES.includes(renderJob.status) ? renderJob.id : null;
+
+  useEffect(() => {
+    if (activeJobId === null) return;
+
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/render/${activeJobId}`);
+        const data = await res.json();
+        if (!cancelled && res.ok) setRenderJob(data.job);
+      } catch {
+        // Transient fetch error; the next poll tick will retry.
+      }
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [activeJobId]);
+
+  async function startRender() {
+    setRenderError(null);
+    try {
+      const res = await fetch("/api/render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to start render.");
+      setRenderJob(data.job);
+    } catch (e) {
+      setRenderError(e instanceof Error ? e.message : "Failed to start render.");
+    }
+  }
 
   async function saveCaption(id: number, caption: string) {
     setItems((prev) =>
@@ -193,16 +269,45 @@ export default function ReviewPage() {
 
           <div className="flex flex-col gap-2 pt-2">
             <button
-              disabled
-              title="Video rendering lands in step 3"
-              className="w-fit rounded-md bg-blue-600 text-white px-4 py-2 text-sm font-medium opacity-50 cursor-not-allowed"
+              onClick={startRender}
+              disabled={activeJobId !== null || includedCount === 0}
+              className="w-fit rounded-md bg-blue-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Generate Video
+              {activeJobId !== null ? "Generating…" : "Generate Video"}
             </button>
-            <p className="text-xs opacity-60">
-              Video rendering isn&apos;t built yet — captions, ordering, and
-              include/exclude are already saved as you go.
-            </p>
+
+            {renderError && (
+              <p className="text-sm text-red-600 dark:text-red-400">{renderError}</p>
+            )}
+
+            {renderJob && ACTIVE_RENDER_STATUSES.includes(renderJob.status) && (
+              <p className="text-xs opacity-70">
+                {renderJob.progress ?? "Working…"}
+              </p>
+            )}
+
+            {renderJob?.status === "error" && (
+              <p className="text-sm text-red-600 dark:text-red-400">
+                {renderJob.error ?? "Render failed."}
+              </p>
+            )}
+
+            {renderJob?.status === "done" && (
+              <div className="flex flex-col gap-2 pt-1">
+                <video
+                  controls
+                  className="w-full max-w-md rounded-md border border-black/10 dark:border-white/15"
+                  src={`/api/render/${renderJob.id}/file`}
+                />
+                <a
+                  href={`/api/render/${renderJob.id}/file`}
+                  download={`monthly-vlog-${renderJob.month}.mp4`}
+                  className="text-sm text-blue-600 dark:text-blue-400 underline w-fit"
+                >
+                  Download video
+                </a>
+              </div>
+            )}
           </div>
         </>
       )}

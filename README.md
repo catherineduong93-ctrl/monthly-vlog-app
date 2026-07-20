@@ -10,10 +10,18 @@ hosting costs.
 **Step 1:** Next.js scaffold + Dropbox OAuth, proven by listing the files
 in your configured Dropbox folder.
 
-**Step 2 (this commit):** Monthly Review screen at `/review` — grid of
-thumbnails for the selected month, inline captions, include/exclude
-checkboxes, and drag-to-reorder, all persisted to the local SQLite
-`media_items` table. No video rendering yet — that's steps 3-5.
+**Step 2:** Monthly Review screen at `/review` — grid of thumbnails for
+the selected month, inline captions, include/exclude checkboxes, and
+drag-to-reorder, all persisted to the local SQLite `media_items` table.
+
+**Step 3 (this commit):** "Generate Video" on the Review screen actually
+renders. Requires `ffmpeg`/`ffprobe` on your `PATH`. Clicking it downloads
+every included item from Dropbox, turns each photo into a slow Ken Burns
+pan/zoom clip and each video into a muted full-length clip, burns in a
+bottom-bar caption where one is set, crossfades everything together, and
+writes an mp4 under `./data/renders/`. The screen polls for progress and
+shows a preview + download link when it's done. No background music or
+trimming yet — that's a later step if wanted.
 
 ## One-time setup: create a Dropbox app
 
@@ -36,6 +44,9 @@ checkboxes, and drag-to-reorder, all persisted to the local SQLite
    - Click **Submit** to save permissions.
 
 ## Local setup
+
+Requires `ffmpeg` and `ffprobe` on your `PATH` (used to render the video —
+`brew install ffmpeg` on macOS, `apt install ffmpeg` on Debian/Ubuntu).
 
 ```bash
 npm install
@@ -77,7 +88,8 @@ you only need to re-connect if you revoke access in Dropbox.
   field.
 - Uncheck "Include in video" to leave an item out of the render.
 - Drag a card onto another to reorder — the new order saves immediately.
-- "Generate Video" is disabled for now — that's step 3.
+- "Generate Video" downloads the included items, renders, and shows a
+  preview + download link when done (see Step 3 above).
 
 Only image/video files with a recognized extension are shown (jpg, jpeg,
 png, heic, heif, tif, tiff, gif, webp, mp4, mov, m4v, avi, mkv, webm).
@@ -93,3 +105,7 @@ without a schema change).
 `include`, `created_at`). Captions/order/include are edited here; name,
 thumbnail, and timestamp are always read fresh from Dropbox so renames
 show up automatically.
+
+`render_jobs` — one row per "Generate Video" click (`user_id`, `month`,
+`status`, `progress`, `output_path`, `error`). The Review screen polls
+`GET /api/render/[id]` while a job is `queued`/`downloading`/`rendering`.

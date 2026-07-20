@@ -160,3 +160,18 @@ export async function getThumbnail(
 
   return { data, contentType: "image/jpeg" };
 }
+
+/**
+ * Downloads the full content of a file (photo or video) for rendering.
+ */
+export async function downloadFile(userId: number, path: string): Promise<Buffer> {
+  const dbx = await getClientForUser(userId);
+  const response = await dbx.filesDownload({ path });
+
+  // Same fileBinary vs. fileBlob quirk as getThumbnail above.
+  const result = response.result as unknown as {
+    fileBinary?: Buffer;
+    fileBlob?: Blob;
+  };
+  return result.fileBinary ?? Buffer.from(await result.fileBlob!.arrayBuffer());
+}
