@@ -17,16 +17,22 @@ drag-to-reorder, all persisted to the local SQLite `media_items` table.
 **Step 3:** "Generate Video" on the Review screen actually renders.
 Requires `ffmpeg`/`ffprobe` on your `PATH`. Clicking it downloads every
 included item from Dropbox, turns each photo into a slow Ken Burns
-pan/zoom clip and each video into a muted full-length clip, burns in a
-bottom-bar caption where one is set, crossfades everything together, and
-writes an mp4 under `./data/renders/`. The screen polls for progress and
-shows a preview + download link when it's done.
+pan/zoom clip and each video into a muted clip, burns in a bottom-bar
+caption where one is set, crossfades everything together, and writes an
+mp4 under `./data/renders/`. The screen polls for progress and shows a
+preview + download link when it's done.
 
-**Step 4 (this commit):** Optional background music. If
-`DROPBOX_MUSIC_FOLDER_PATH` is set, the Review screen shows a dropdown of
-tracks from that folder; picking one loops the track under the (muted)
-video with a 2s fade-out, trimmed to the video's exact length. No
-trimming of over-long clips yet — that's a later step if wanted.
+**Step 4:** Optional background music. If `DROPBOX_MUSIC_FOLDER_PATH` is
+set, the Review screen shows a dropdown of tracks from that folder;
+picking one loops the track under the (muted) video with a 2s fade-out,
+trimmed to the video's exact length.
+
+**Step 5 (this commit):** Better pacing and a proper opening/closing.
+Video clips are capped to 12s (trimmed from the start) so one long
+Insta360 clip can't dominate the whole edit; the video now opens on a
+title card with the month name and closes with a 1s fade-to-black instead
+of an abrupt cut; background music is loudness-normalized so tracks of
+different mastered volume all come out consistent.
 
 ## One-time setup: create a Dropbox app
 
@@ -98,7 +104,7 @@ you only need to re-connect if you revoke access in Dropbox.
 - If `DROPBOX_MUSIC_FOLDER_PATH` is set, pick a background music track
   from the dropdown before generating (or leave it on "None").
 - "Generate Video" downloads the included items, renders, and shows a
-  preview + download link when done (see Step 3/4 above).
+  preview + download link when done (see Steps 3-5 above).
 
 Only image/video files with a recognized extension are shown (jpg, jpeg,
 png, heic, heif, tif, tiff, gif, webp, mp4, mov, m4v, avi, mkv, webm).

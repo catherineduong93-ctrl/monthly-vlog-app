@@ -9,11 +9,15 @@ import { updateRenderJob } from "./renderJobs";
 import {
   CROSSFADE_SECONDS,
   FPS,
+  MAX_VIDEO_CLIP_SECONDS,
   MUSIC_FADE_SECONDS,
+  OUTRO_FADE_SECONDS,
   PHOTO_DURATION_SECONDS,
+  TITLE_CARD_SECONDS,
   VIDEO_HEIGHT,
   VIDEO_WIDTH,
   captionFilter,
+  escapeDrawtext,
   ffprobeDuration,
   runFfmpeg,
 } from "./ffmpeg";
@@ -104,9 +108,44 @@ async function buildVideoSegment(
   await runFfmpeg([
     "-i",
     sourcePath,
+    "-t",
+    String(MAX_VIDEO_CLIP_SECONDS),
     "-vf",
     vf,
     "-an",
+    "-c:v",
+    "libx264",
+    "-pix_fmt",
+    "yuv420p",
+    outputPath,
+  ]);
+  return outputPath;
+}
+
+function formatMonthLabel(month: string): string {
+  const [year, monthNum] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, monthNum - 1, 1));
+  return date.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
+/**
+ * A black frame with the month name, used as the opening segment so the
+ * video has a proper title instead of starting mid-clip.
+ */
+async function buildTitleCardSegment(workDir: string, month: string): Promise<string> {
+  const outputPath = path.join(workDir, "seg-title.mp4");
+  const label = escapeDrawtext(formatMonthLabel(month));
+  const vf =
+    `drawtext=text='${label}':expansion=none:fontcolor=white:fontsize=90:` +
+    `x=(w-text_w)/2:y=(h-text_h)/2,format=yuv420p`;
+
+  await runFfmpeg([
+    "-f",
+    "lavfi",
+    "-i",
+    `color=c=black:s=${VIDEO_WIDTH}x${VIDEO_HEIGHT}:r=${FPS}:d=${TITLE_CARD_SECONDS}`,
+    "-vf",
+    vf,
     "-c:v",
     "libx264",
     "-pix_fmt",
@@ -126,9 +165,13 @@ async function concatWithCrossfade(
   outputPath: string
 ): Promise<void> {
   if (segmentPaths.length === 1) {
+    const duration = await ffprobeDuration(segmentPaths[0]);
+    const fadeStart = Math.max(duration - OUTRO_FADE_SECONDS, 0);
     await runFfmpeg([
       "-i",
       segmentPaths[0],
+      "-vf",
+      `fade=t=out:st=${fadeStart.toFixed(3)}:d=${OUTRO_FADE_SECONDS}`,
       "-c:v",
       "libx264",
       "-pix_fmt",
@@ -147,13 +190,18 @@ async function concatWithCrossfade(
 
   for (let i = 1; i < segmentPaths.length; i++) {
     const offset = Math.max(cumulative - CROSSFADE_SECONDS, 0);
-    const outLabel = i === segmentPaths.length - 1 ? "vout" : `v${i}`;
+    const outLabel = i === segmentPaths.length - 1 ? "vpre" : `v${i}`;
     filters.push(
       `[${lastLabel}][${i}:v]xfade=transition=fade:duration=${CROSSFADE_SECONDS}:offset=${offset.toFixed(3)}[${outLabel}]`
     );
     cumulative = offset + durations[i];
     lastLabel = outLabel;
   }
+
+  const fadeStart = Math.max(cumulative - OUTRO_FADE_SECONDS, 0);
+  filters.push(
+    `[${lastLabel}]fade=t=out:st=${fadeStart.toFixed(3)}:d=${OUTRO_FADE_SECONDS}[vout]`
+  );
 
   await runFfmpeg([
     ...inputArgs,
@@ -190,7 +238,8 @@ async function muxBackgroundMusic(
     "-i",
     musicPath,
     "-filter_complex",
-    `[1:a]afade=t=out:st=${fadeStart.toFixed(3)}:d=${MUSIC_FADE_SECONDS}[aout]`,
+    `[1:a]loudnorm=I=-16:TP=-1.5:LRA=11[norm];` +
+      `[norm]afade=t=out:st=${fadeStart.toFixed(3)}:d=${MUSIC_FADE_SECONDS}[aout]`,
     "-map",
     "0:v",
     "-map",
@@ -235,7 +284,9 @@ export async function runRenderJob(
       return;
     }
 
-    const segmentPaths: string[] = [];
+    updateRenderJob(jobId, { status: "rendering", progress: "Building title card…" });
+    const segmentPaths: string[] = [await buildTitleCardSegment(workDir, month)];
+
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       updateRenderJob(jobId, {

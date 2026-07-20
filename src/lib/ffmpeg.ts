@@ -6,6 +6,12 @@ export const FPS = 30;
 export const PHOTO_DURATION_SECONDS = 4;
 export const CROSSFADE_SECONDS = 0.6;
 export const MUSIC_FADE_SECONDS = 2;
+// Longest a single video clip is allowed to run. Insta360 clips can be
+// several minutes long; without a cap one clip could dominate the whole
+// edit. Trims from the start, since we have no way to pick a "best" moment.
+export const MAX_VIDEO_CLIP_SECONDS = 12;
+export const TITLE_CARD_SECONDS = 2.5;
+export const OUTRO_FADE_SECONDS = 1;
 
 /**
  * Runs ffmpeg (or ffprobe) and rejects with stderr on a non-zero exit, since
