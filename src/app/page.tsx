@@ -55,9 +55,15 @@ export default function Home() {
         {status === null ? (
           <p className="text-sm opacity-70">Checking connection…</p>
         ) : status.connected ? (
-          <div className="text-sm">
+          <div className="text-sm flex flex-col gap-2">
             <p className="text-green-600 dark:text-green-400">✓ Connected</p>
             <p className="opacity-70">Configured folder: {status.folderPath}</p>
+            <a
+              href="/review"
+              className="inline-block w-fit rounded-md bg-blue-600 text-white px-4 py-2 text-sm font-medium hover:bg-blue-700"
+            >
+              Go to Monthly Review
+            </a>
           </div>
         ) : (
           <div className="flex flex-col gap-2 text-sm">

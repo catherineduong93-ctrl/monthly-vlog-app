@@ -55,7 +55,7 @@ export function isDropboxConnected(userId: number): boolean {
  * Builds a Dropbox client for the given user, refreshing the access token
  * first if it's expired (or about to expire).
  */
-async function getClientForUser(userId: number): Promise<Dropbox> {
+export async function getClientForUser(userId: number): Promise<Dropbox> {
   const tokens = getTokens(userId);
   if (!tokens) {
     throw new Error(
@@ -87,6 +87,7 @@ export interface DropboxFileEntry {
   id: string;
   name: string;
   pathDisplay: string;
+  pathLower: string | null;
   kind: "file" | "folder";
   clientModified: string | null;
   size: number | null;
@@ -125,9 +126,29 @@ export async function listConfiguredFolder(
       id: entry.id ?? entry.path_lower ?? entry.name,
       name: entry.name,
       pathDisplay: entry.path_display ?? entry.name,
+      pathLower: entry.path_lower ?? null,
       kind: entry[".tag"],
       clientModified:
         entry[".tag"] === "file" ? entry.client_modified : null,
       size: entry[".tag"] === "file" ? entry.size : null,
     }));
+}
+
+/**
+ * Fetches a small preview image for a photo or video from Dropbox, so the
+ * Monthly Review grid doesn't need to download full-resolution files.
+ */
+export async function getThumbnail(
+  userId: number,
+  path: string
+): Promise<{ data: Buffer; contentType: string }> {
+  const dbx = await getClientForUser(userId);
+  const response = await dbx.filesGetThumbnailV2({
+    resource: { ".tag": "path", path },
+    format: { ".tag": "jpeg" },
+    size: { ".tag": "w480h320" },
+  });
+
+  const result = response.result as unknown as { fileBinary: Buffer };
+  return { data: result.fileBinary, contentType: "image/jpeg" };
 }

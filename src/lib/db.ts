@@ -24,6 +24,21 @@ function createDb(): Database.Database {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS media_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      dropbox_file_id TEXT NOT NULL,
+      month TEXT NOT NULL,
+      caption TEXT,
+      sort_order INTEGER NOT NULL,
+      include INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (user_id, dropbox_file_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_media_items_user_month
+      ON media_items (user_id, month);
   `);
 
   return db;

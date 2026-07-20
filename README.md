@@ -7,9 +7,13 @@ hosting costs.
 
 ## Status
 
-**Step 1 (this commit):** Next.js scaffold + Dropbox OAuth, proven by
-listing the files in your configured Dropbox folder. No SQLite-backed
-review UI or video rendering yet — that's steps 2-5.
+**Step 1:** Next.js scaffold + Dropbox OAuth, proven by listing the files
+in your configured Dropbox folder.
+
+**Step 2 (this commit):** Monthly Review screen at `/review` — grid of
+thumbnails for the selected month, inline captions, include/exclude
+checkboxes, and drag-to-reorder, all persisted to the local SQLite
+`media_items` table. No video rendering yet — that's steps 3-5.
 
 ## One-time setup: create a Dropbox app
 
@@ -59,10 +63,24 @@ Open [http://localhost:3000](http://localhost:3000):
 1. Click **Connect Dropbox** and authorize the app.
 2. You'll be redirected back and shown a **✓ Connected** status.
 3. Click **List files** to confirm the app can see files in your
-   configured folder.
+   configured folder, then click **Go to Monthly Review**.
 
 Tokens (including the refresh token) are stored in the local SQLite DB, so
 you only need to re-connect if you revoke access in Dropbox.
+
+## Monthly Review (`/review`)
+
+- Pick a month with the month picker at the top.
+- Every photo/video in your configured folder whose Dropbox timestamp
+  falls in that month shows up as a card, sorted chronologically.
+- Type a caption under any item — it saves when you click away from the
+  field.
+- Uncheck "Include in video" to leave an item out of the render.
+- Drag a card onto another to reorder — the new order saves immediately.
+- "Generate Video" is disabled for now — that's step 3.
+
+Only image/video files with a recognized extension are shown (jpg, jpeg,
+png, heic, heif, tif, tiff, gif, webp, mp4, mov, m4v, avi, mkv, webm).
 
 ## Data model
 
@@ -70,6 +88,8 @@ you only need to re-connect if you revoke access in Dropbox.
 pair (`user_id` is included now so a second person can be added later
 without a schema change).
 
-The `media_items` table (`dropbox_file_id`, `user_id`, `month`, `caption`,
-`sort_order`, `include`, `created_at`) lands in step 2 with the Monthly
-Review screen.
+`media_items` — one row per Dropbox file the review screen has seen
+(`dropbox_file_id`, `user_id`, `month`, `caption`, `sort_order`,
+`include`, `created_at`). Captions/order/include are edited here; name,
+thumbnail, and timestamp are always read fresh from Dropbox so renames
+show up automatically.
