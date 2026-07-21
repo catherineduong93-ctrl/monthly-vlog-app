@@ -34,7 +34,12 @@ together, loops the configured music track under it if `MUSIC_TRACK_PATH`
 is set, and writes an mp4 under `./data/renders/`. You land on a separate
 **Output** screen (`/output?job=<id>`) that shows progress while it
 renders, then a preview + download link, with a link back to Review to
-tweak captions/order and regenerate.
+tweak captions/order and regenerate. HEIC/HEIF photos (the default
+format for iPhone camera shots) are converted to JPEG via macOS's
+built-in `sips` tool first, since ffmpeg can't decode HEIC directly —
+this step only works on macOS. Original audio in video clips is
+discarded (they're muted in the render); the only audio in the output
+is the optional background music track.
 
 ## One-time setup: create a Dropbox app
 

@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -30,6 +31,39 @@ interface RenderableItem {
 
 function rendersDir(): string {
   return path.join(path.dirname(config.db.path()), "renders");
+}
+
+const HEIC_EXTENSIONS = new Set([".heic", ".heif"]);
+
+/**
+ * Converts a HEIC/HEIF photo to JPEG via macOS's built-in `sips` tool.
+ * ffmpeg has no HEIF demuxer in typical builds (including Homebrew's), so
+ * without this step every HEIC photo — the default format for iPhone
+ * camera shots — would fail to decode entirely.
+ */
+function convertHeicToJpeg(sourcePath: string, destPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("sips", ["-s", "format", "jpeg", sourcePath, "--out", destPath]);
+    let stderr = "";
+    proc.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    proc.on("error", (err) => {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        reject(
+          new Error(
+            "HEIC photos need macOS's `sips` tool to convert to JPEG, but it wasn't found. This step only works on macOS."
+          )
+        );
+      } else {
+        reject(err);
+      }
+    });
+    proc.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`sips exited with code ${code}: ${stderr.trim()}`));
+    });
+  });
 }
 
 async function collectRenderableItems(
@@ -251,6 +285,12 @@ export async function runRenderJob(jobId: number, userId: number, month: string)
       const data = await downloadFile(userId, item.pathLower);
       await fs.writeFile(sourcePath, data);
 
+      let mediaPath = sourcePath;
+      if (item.kind === "photo" && HEIC_EXTENSIONS.has(path.extname(item.name).toLowerCase())) {
+        mediaPath = path.join(workDir, `src-${i}.jpg`);
+        await convertHeicToJpeg(sourcePath, mediaPath);
+      }
+
       updateRenderJob(jobId, {
         status: "rendering",
         progress: `Rendering ${i + 1}/${items.length}: ${item.name}`,
@@ -258,13 +298,14 @@ export async function runRenderJob(jobId: number, userId: number, month: string)
 
       const segmentPath =
         item.kind === "photo"
-          ? await buildPhotoSegment(workDir, i, sourcePath, item.caption)
-          : await buildVideoSegment(workDir, i, sourcePath, item.caption, item.keepFull);
+          ? await buildPhotoSegment(workDir, i, mediaPath, item.caption)
+          : await buildVideoSegment(workDir, i, mediaPath, item.caption, item.keepFull);
       segmentPaths.push(segmentPath);
 
       // Free disk space as we go; the source file isn't needed once its
       // segment is rendered.
       await fs.unlink(sourcePath).catch(() => {});
+      if (mediaPath !== sourcePath) await fs.unlink(mediaPath).catch(() => {});
     }
 
     updateRenderJob(jobId, {
