@@ -103,7 +103,7 @@ async function buildPhotoSegment(
   const vf =
     `scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,` +
     `pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,` +
-    `format=yuv420p${captionFilter(caption)}`;
+    `format=yuv420p${await captionFilter(caption)}`;
 
   await runFfmpeg([
     "-loop",
@@ -137,7 +137,7 @@ async function buildVideoSegment(
   const vf =
     `scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,` +
     `pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,` +
-    `fps=${FPS},format=yuv420p${captionFilter(caption)}`;
+    `fps=${FPS},format=yuv420p${await captionFilter(caption)}`;
 
   const args = ["-i", sourcePath];
   if (!keepFull) {

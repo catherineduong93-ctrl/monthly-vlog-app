@@ -65,13 +65,46 @@ export function escapeDrawtext(text: string): string {
     .replace(/:/g, "\\:");
 }
 
+let drawtextSupport: Promise<boolean> | null = null;
+
+/**
+ * ffmpeg builds without libfreetype (e.g. Homebrew's plain `ffmpeg` formula,
+ * as opposed to `ffmpeg-full`) have no `drawtext` filter at all, which would
+ * otherwise crash every render. Checked once and cached for the process.
+ */
+function hasDrawtextFilter(): Promise<boolean> {
+  if (!drawtextSupport) {
+    drawtextSupport = new Promise((resolve) => {
+      const proc = spawn("ffmpeg", ["-hide_banner", "-filters"]);
+      let stdout = "";
+      proc.stdout.on("data", (chunk) => {
+        stdout += chunk.toString();
+      });
+      proc.on("error", () => resolve(false));
+      proc.on("close", () => resolve(/\bdrawtext\b/.test(stdout)));
+    });
+  }
+  return drawtextSupport;
+}
+
 /**
  * Bottom-third translucent bar + centered white caption text, appended to a
  * filter chain that has already been scaled/padded to VIDEO_WIDTH x
- * VIDEO_HEIGHT.
+ * VIDEO_HEIGHT. Resolves to an empty string (skipping the caption rather
+ * than failing the whole render) if this ffmpeg build has no drawtext
+ * filter — see hasDrawtextFilter.
  */
-export function captionFilter(caption: string | null | undefined): string {
+export async function captionFilter(caption: string | null | undefined): Promise<string> {
   if (!caption || !caption.trim()) return "";
+
+  if (!(await hasDrawtextFilter())) {
+    console.warn(
+      "This ffmpeg build has no drawtext filter, so captions can't be burned in. " +
+        "Install a build with libfreetype (e.g. `brew install ffmpeg-full` on macOS) to enable captions."
+    );
+    return "";
+  }
+
   const barHeight = Math.round(VIDEO_HEIGHT / 3);
   const text = escapeDrawtext(caption.trim());
   return (
